@@ -8,7 +8,8 @@
 # Distributed under the Boost Software License, Version 1.0.
 # (See accompanying file LICENSE_1_0.txt or copy at
 # http://www.boost.org/LICENSE_1_0.txt)
-
+from BaseHTTPServer import HTTPServer
+from SimpleHTTPServer import SimpleHTTPRequestHandler
 
 from b2.build.engine import Engine
 from b2.manager import Manager
@@ -34,6 +35,7 @@ import b2.util.regex
 from b2.manager import get_manager
 from b2.util import cached
 from b2.util import option
+from b2.tools.server import HttpServer, HttpHandler
 
 
 import bjam
@@ -613,6 +615,7 @@ def command_line_build(current_project, manager, metatarget_ids, properties):
         if post_build_hook:
             post_build_hook(ok)
 
+
 class Server:
 
     def __init__(self, current_project, manager):
@@ -661,8 +664,50 @@ class Server:
                 "event": "build-finished",
                 "success": "true" if ok else "false"
         }
-        print json.dumps(done)
-        sys.stdout.flush()
+        self.manager.output_event(json.dumps(done))
+
+    def handle_request(self, data, token=None):
+        if 'token' in data:
+            token = data['token']
+
+        if data['type'] == 'request':
+            r = data['request']
+
+            if r == "build" or r == "clean":
+                self.build(data)
+
+            elif r == "get":
+
+                result = None
+                error = None
+                try:
+                    result = self.handle_get(data)
+                except Exception as e:
+                    error = str(e)
+
+                fullResult = {}
+                if token:
+                    fullResult['token'] = token
+
+                if result:
+                    fullResult['type'] = 'response'
+                    fullResult['response'] = result
+                else:
+                    fullResult['type'] = 'error'
+                    fullResult['error'] = error or "unknown error"
+
+                self.manager.output_event(json.dumps(fullResult))
+
+            elif r == 'get-applicability':
+                result = {}
+                if token:
+                    result['token'] = token
+                result['type'] = 'response'
+                result['response'] = self.get_applicability(data)
+                self.manager.output_event(json.dumps(result))
+
+        else:
+            print "unknown type"
 
     def main_loop(self):
 
@@ -675,53 +720,8 @@ class Server:
             if len(line) == 0:
                 continue
 
-            token = None
-            j = json.loads(line)
-
-            if 'token' in j:
-                token = j['token']
-
-            if j['type'] == 'request':
-                r = j['request']
-
-                if r == "build" or r == "clean":
-                    self.build(j)
-                    sys.stdout.flush()
-
-                elif r == "get":
-
-                    result = None
-                    error = None
-                    try:
-                        result = self.handle_get(j)
-                    except Exception as e:
-                        error = str(e)
-
-                    fullResult = {}
-                    if token:
-                        fullResult['token'] = token
-
-                    if result:
-                        fullResult['type'] = 'response'
-                        fullResult['response'] = result
-                    else:
-                        fullResult['type'] = 'error'
-                        fullResult['error'] = error or "unknown error"
-
-                    print json.dumps(fullResult)
-                    sys.stdout.flush()
-
-                elif r == 'get-applicability':
-                    result = {}
-                    if token:
-                        result['token'] = token
-                    result['type'] = 'response'
-                    result['response'] = self.get_applicability(j)
-                    print json.dumps(result)
-                    sys.stdout.flush()
-
-            else:
-                print "unknown type"
+            data = json.loads(line)
+            self.handle_request(data)
 
     def handle_get(self, j):
 
@@ -754,12 +754,6 @@ class Server:
             }
         ]
 
-        #//important = set(['toolset', 'target-os', 'architecture', 'variant', 'optimization', 'link'])
-
-        #for t in feature.enumerate():
-        #    #if t[0] in important:
-        #        r.append(t[1].json())
-
         return r
 
     def get_applicability(self, j):
@@ -770,23 +764,43 @@ class Server:
         for f in [f for f in feature.all() if f.get_applicability_calculator() != None]:
             a = f.get_applicability_calculator()(p)
 
-            r[f.name()] = a;
+            r[f.name()] = a
 
         return r
 
-def main_real():
 
+class BuildHttpHandler(HttpHandler, Server):
+    def handle_data(self, data):
+        try:
+            data = json.loads(data)
+            self.handle_request(data)
+        except ValueError as e:
+            self.write({'type': 'error', 'error': 'Invalid Request: ' + str(e)})
+
+
+def main_real():
     global debug_config, out_xml
 
-    debug_config = "--debug-configuration" in sys.argv
-    out_xml = any(re.match("^--out-xml=(.*)$", a) for a in sys.argv)
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--debug-configuration', action='store_true')
+    parser.add_argument('--version', action='store_true')
+    parser.add_argument('--out-xml', default='')
+    parser.add_argument('--server', action='store_true')
+    parser.add_argument(
+        '--http-server', default='', help='The index.html file to server')
+    args, _ = parser.parse_known_args()
+
+    debug_config = args.debug_configuration
+    out_xml = args.out_xml
 
     engine = Engine()
 
     global_build_dir = option.get("build-dir")
     manager = Manager(engine, global_build_dir)
 
-    if "--version" in sys.argv:
+    if args.version:
         from b2.build import version
         version.report()
         return
@@ -837,7 +851,7 @@ def main_real():
 
         using(dt, dtv)
 
-    if "--server" in sys.argv:
+    if args.server:
 
         if not current_project:
             manager.errors()("Server mode requires starting in project root")
@@ -848,10 +862,11 @@ def main_real():
         events_file = os.fdopen(os.dup(sys.stdout.fileno()), 'w')
 
         manager.enable_events(True, events_file)
-
         server = Server(current_project, manager)
         server.main_loop()
-
+    elif args.http_server:
+        HttpServer(('0.0.0.0', 8000), BuildHttpHandler, current_project, manager,
+                   args.http_server).serve_forever()
     else:
         # Parse command line for targets and properties. Note that this requires
         # that all project files already be loaded.

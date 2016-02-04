@@ -6,6 +6,8 @@ var source = require('vinyl-source-stream');
 var buffer = require('vinyl-buffer');
 var watchify = require('watchify');
 var uglify = require('gulp-uglifyjs');
+var sourcemaps = require('gulp-sourcemaps');
+var gutil = require('gulp-util');
 
 var _ = require('underscore');
 
@@ -19,21 +21,23 @@ function bundle(watch)
     if (watch) {
         bundler = watchify(browserify(input, args));
     } else {
-        bundler = browserify(input);
+        bundler = browserify(input, {debug: true});
     }
     bundler.transform('reactify');
     
     function bundleProper()
     {
-        var bundle = bundler.bundle();
-        bundle
+        return bundler.bundle()
             .pipe(source('bundle.js'))
             .pipe(buffer())
-            .pipe(uglify())
+            .pipe(sourcemaps.init())
+            //.pipe(uglify())
+            .on('error', gutil.log)
+            .pipe(sourcemaps.write('./'))
             .pipe(gulp.dest('./client'));
     }
 
-    bundleProper();
+    var b = bundleProper();
 
     if (watch) {
         bundler.on('update', bundleProper);
@@ -42,6 +46,8 @@ function bundle(watch)
             this.end();
         });
     }
+
+    return b;
 }
 
 gulp.task('browserify', function() {

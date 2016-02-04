@@ -408,10 +408,9 @@ class Toolset:
          For example we might have toolset gcc, and a particular instance of it
          will use i686-w64-mingw32-g++ as command and target-os=windows as condition.
         """
-
         Toolset.__all.append(self)
         print "Create TOOLSET", name, command
-        if type(condition) == type([]):
+        if isinstance(condition, (list, tuple)):
             condition = property_set.create(condition)
         if type(command) == type([]):
             assert len(command) == 1

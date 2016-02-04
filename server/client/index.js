@@ -272,7 +272,7 @@ var PropertyGroup = React.createClass({
     render: function() {
 
         var self = this;
-        var properties = []
+        var properties = [];
         this.props.group.properties.forEach(function(f) {
             if (f.applicable === false)
                 return;
@@ -383,8 +383,10 @@ var Breadcrumbs = React.createClass({
                 if (v) {
                     newPath = newPath.concat([{name: v}]);
                 }
-                newPath = newPath.map(function(e) { return e.name })
-                this.props.onChange(newPath);
+                newPath = newPath.map(function (e) {
+                    return e.name
+                });
+                self.props.onChange(newPath);
             }
             content.push(<BreadcrumbsItem
                 value={this.props.path[i].name}
@@ -393,9 +395,11 @@ var Breadcrumbs = React.createClass({
                 onValueSelected={handler.bind(this, i)}/>)
         }
 
-        return <div className='breadcrumbs2'>
-            {content}
-        </div>;
+        return (
+            <div className='breadcrumbs2'>
+                {content}
+            </div>
+        );
     }
 
 });
@@ -408,7 +412,7 @@ var Settings = React.createClass({
 
     handleMetaChange: function(path) {
         this.props.onMetatargetPathChange(path);
-;    },
+    },
 
     render: function () {
 
@@ -442,7 +446,7 @@ var Store = Backbone.Model.extend({
     constructor: function() {
 
     }
-})
+});
 
 var BuildActionMessage = React.createClass({
     render: function() {
@@ -672,7 +676,7 @@ var BoostBuildUI = React.createClass({
                     ]
                 }
             ]
-        }
+        };
 
         this.metatarget_path = this.computeMetatargetPath(['hello', 'app']);
 
@@ -771,7 +775,7 @@ var BoostBuildUI = React.createClass({
 
             var names = _.pluck(this.state.metatarget_path, 'name');
             var length = names.length;
-            names[0] = '.'
+            names[0] = '.';
             if (this.state.metatarget_path[length-1].type !== 'project') {
                 names[length-1] = '/' + names[length-1];
             }
